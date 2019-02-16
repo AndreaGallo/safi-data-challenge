@@ -9,20 +9,27 @@ import _ from 'lodash';
 import DatePicker from 'react-datepicker';
 import {FlexibleWidthXYPlot , XAxis, YAxis, HorizontalGridLines, VerticalGridLines, LineSeries} from 'react-vis';
 
+const config = {
+  activePowerMaxValue: 99.997,
+  activePowerMinValue: 0.10525999999999999,
+  timeBetweenRecords: 3000,
+  metricidToFilter: "PSUM_KW",
+  states: {
+    off: "off",
+    loaded: "loaded",
+    unloaded: "unloaded",
+    idle: "idle"
+  }
+}
+
 class App extends Component {
   constructor(props) {
     super(props);
     this.state = {
       loadError: false,
-      data: null,
+      data: [],
       startDate: null,
-      endDate: null, 
-      compressorStates: {
-        // offstate no data at all, days that left to complete the week
-        unloadedMaxValue: null, // minValue
-        loadedMinValue: null, // 20% max value
-        loadedMaxValue: null
-      }
+      endDate: null
     };
     this.loadData = this.loadData.bind(this);
     this.handleChangeStart = this.handleChangeStart.bind(this);
@@ -36,51 +43,48 @@ class App extends Component {
   }
 
   componentWillMount() {
-    csv(csvFilePath, (error, data) => {
+    // csv(csvFilePath, (error, data) => {
 
-      if (error) {
-        this.setState({loadError: true});
-      }
-      if(data && data.length) {
-        // agregar filter para q funcione en IE
-        var filterData = data.filter( d => d.metricid.toUpperCase() ===  'PSUM_KW' ); 
-        console.log('filterdata',filterData);
+    //   if (error) {
+    //     this.setState({loadError: true});
+    //   }
+    //   if(data && data.length) {
+    //     // agregar filter para q funcione en IE
+    //     var filterData = data.filter( d => d.metricid.toUpperCase() ===  config.metricidToFilter ); 
+    //     console.log('filterdata',filterData);
 
-        var maximumRecValue = _.maxBy(filterData, function(o) { return o.recvalue; });
-        var minimumRecValue = _.minBy(filterData, function(o) { return o.recvalue; });
-        var dataFilter = filterData.map(d => ({...d, x: Number(d.timestamp) , y: Number(d.recvalue)}));
+    //     var dataFilter = filterData.map(d => ({...d, x: Number(d.timestamp) , y: Number(d.recvalue)}));
 
-        this.setState({
-          data: dataFilter,
-          startDate: dataFilter[0].x,
-          endDate: dataFilter[dataFilter.length - 1].x,
-          compressorStates: {
-            unloadedMaxValue: Number(minimumRecValue.recvalue),
-            loadedMinValue: 0.2 * maximumRecValue.recvalue,
-            loadedMaxValue: Number(maximumRecValue.recvalue)
-          }
-        });
+    //     this.setState({
+    //       data: dataFilter,
+    //       startDate: dataFilter[0].x,
+    //       endDate: dataFilter[dataFilter.length - 1].x
+    //     });
 
-      }
-    });
+    //   }
+    // });
     
     var bufferStatesInfo = [];
     var bufferAxesData = [];
-    Papa.LocalChunkSize = 1;
+
     Papa.parse(csvFilePath, {
       download: true,
       header: true,
       chunk: partialResult => {
-        var filterData;
+
         if (partialResult.data.length) {
-          filterData =  partialResult.data.filter( d => d.metricid && d.metricid.toUpperCase() ===  'PSUM_KW'); 
+          var filterData =  partialResult.data.filter( d => d.metricid && d.metricid.toUpperCase() ===  config.metricidToFilter); 
+          bufferStatesInfo = [...bufferStatesInfo, ...this.processData(filterData)];
+          var axesArray = filterData.map(d => ({...d, x: Number(d.timestamp) , y: Number(d.recvalue)}))
+          bufferAxesData = [...bufferAxesData, ...axesArray];
+          
+          
         }
-        bufferStatesInfo = [...bufferStatesInfo, ...this.processData(filterData)];
-        var axesArray = filterData.map(d => ({...d, x: Number(d.timestamp) , y: Number(d.recvalue)}))
-        bufferAxesData = [...bufferAxesData, ...axesArray];
+        
       },
-      complete: function() {
-        //push off states
+      complete: () => {
+        //push off 
+        this.loadData(bufferAxesData);
         console.log("All done!");
         console.log(bufferStatesInfo);
         console.log(bufferAxesData);
@@ -91,6 +95,7 @@ class App extends Component {
   processData = (data) => {
     var resultData = [];
     var prevTime = data[0].timestamp;
+    var {states} = config;
 
     _.each(data, (record) => {
       var result = {
@@ -99,7 +104,7 @@ class App extends Component {
         time: record.timestamp - prevTime
       };
       if (record.timestamp - prevTime > 30000) {
-        result.state = 'off';
+        result.state = states.off;
       } else {
         result.state =  this.getCompressorState(record.recvalue);
       }
@@ -126,11 +131,14 @@ class App extends Component {
    * @param activePower numeric: value from 'Psum_kw' key
    */
   getCompressorState = (activePower) => {
-    const {unloadedMaxValue, loadedMinValue} = this.state.compressorStates;
-    if (activePower === 0) return 'off';
-    if (activePower > 0 && activePower <= unloadedMaxValue) return 'unloaded';
-    if (activePower > unloadedMaxValue && activePower < loadedMinValue) return 'idle';
-    if (activePower >= loadedMinValue) return 'loaded';
+    const {activePowerMaxValue, activePowerMinValue, states} = config;
+    const unloadedMaxValue = activePowerMinValue;
+    const loadedMinValue = 0.2 * activePowerMaxValue;
+
+    if (activePower === 0) return states.off;
+    if (activePower > 0 && activePower <= unloadedMaxValue) return states.unloaded;
+    if (activePower > unloadedMaxValue && activePower < loadedMinValue) return states.idle;
+    if (activePower >= loadedMinValue) return states.loaded;
   }
   
   render() {
@@ -143,7 +151,7 @@ class App extends Component {
       return <div />;
     }
     return ( <div>
-<DatePicker
+{/* <DatePicker
       selected={startDatePicker}
       selectsStart
       startDate={startDatePicker}
@@ -171,12 +179,17 @@ class App extends Component {
       timeIntervals={15}
       dateFormat="MMMM d, yyyy h:mm aa"
       timeCaption="time"
-  />
+  /> 
   
     <FlexibleWidthXYPlot
       xType="time"
       height={700}
       xDomain={[this.state.startDate, this.state.endDate]}
+      >
+      */}
+      <FlexibleWidthXYPlot
+      xType="time"
+      height={700}
       >
       <HorizontalGridLines />
       <VerticalGridLines />
