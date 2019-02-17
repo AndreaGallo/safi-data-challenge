@@ -1,5 +1,4 @@
 import React, { Component } from 'react';
-import {csv} from 'd3-request';
 import Papa from 'papaparse';
 import csvFilePath from "./data/demoCompressorWeekData.csv"
 import './App.css';
@@ -7,10 +6,10 @@ import '../node_modules/react-vis/dist/style.css';
 import "react-datepicker/dist/react-datepicker.css";
 import _ from 'lodash';
 import DatePicker from 'react-datepicker';
-import {FlexibleWidthXYPlot , XAxis, YAxis, HorizontalGridLines, VerticalGridLines, LineSeries} from 'react-vis';
+import {FlexibleWidthXYPlot , XYPlot, XAxis, YAxis, HorizontalGridLines, VerticalGridLines, VerticalBarSeries,LineSeries} from 'react-vis';
 
 const config = {
-  activePowerMaxValue: 99.997,
+  activePowerMaxValue: 104.92483,
   activePowerMinValue: 0.10525999999999999,
   timeBetweenRecords: 3000,
   metricidToFilter: "PSUM_KW",
@@ -27,45 +26,35 @@ class App extends Component {
     super(props);
     this.state = {
       loadError: false,
-      data: [],
+      loading: true,
+      activePowerData: [],
+      compressorStatesData: [],
+      timePerState: [],
       startDate: null,
       endDate: null
     };
-    this.loadData = this.loadData.bind(this);
+    this.loadChartsData = this.loadChartsData.bind(this);
     this.handleChangeStart = this.handleChangeStart.bind(this);
     this.handleChangeEnd = this.handleChangeEnd.bind(this);
     this.getCompressorState = this.getCompressorState.bind(this);
     this.processData = this.processData.bind(this);
   }
 
-  loadData = (data) => {
-    this.setState({data});
+  loadChartsData = ({activePowerData, compressorStatesData}) => {
+    this.setState({
+      activePowerData,
+      compressorStatesData,
+      loading: false
+    });
   }
 
-  componentWillMount() {
-    // csv(csvFilePath, (error, data) => {
+  loadDomain = (startDate, endDate) => {
+    this.setState({ startDate, endDate });
+  }
 
-    //   if (error) {
-    //     this.setState({loadError: true});
-    //   }
-    //   if(data && data.length) {
-    //     // agregar filter para q funcione en IE
-    //     var filterData = data.filter( d => d.metricid.toUpperCase() ===  config.metricidToFilter ); 
-    //     console.log('filterdata',filterData);
-
-    //     var dataFilter = filterData.map(d => ({...d, x: Number(d.timestamp) , y: Number(d.recvalue)}));
-
-    //     this.setState({
-    //       data: dataFilter,
-    //       startDate: dataFilter[0].x,
-    //       endDate: dataFilter[dataFilter.length - 1].x
-    //     });
-
-    //   }
-    // });
-    
+  componentWillMount() {    
     var bufferStatesInfo = [];
-    var bufferAxesData = [];
+    var bufferActivePower = [];
 
     Papa.parse(csvFilePath, {
       download: true,
@@ -73,45 +62,91 @@ class App extends Component {
       chunk: partialResult => {
 
         if (partialResult.data.length) {
+          // agregar filter para q funcione en IE
           var filterData =  partialResult.data.filter( d => d.metricid && d.metricid.toUpperCase() ===  config.metricidToFilter); 
-          bufferStatesInfo = [...bufferStatesInfo, ...this.processData(filterData)];
-          var axesArray = filterData.map(d => ({...d, x: Number(d.timestamp) , y: Number(d.recvalue)}))
-          bufferAxesData = [...bufferAxesData, ...axesArray];
-          
-          
+          var dataProcessed = this.processData(filterData);
+          bufferStatesInfo = [...bufferStatesInfo, dataProcessed.compressorStatesData];
+          bufferActivePower = [...bufferActivePower, dataProcessed.activePowerData];
         }
         
       },
       complete: () => {
-        //push off 
-        this.loadData(bufferAxesData);
+        //push off
+        let chartsData = {
+          activePowerData: [].concat.apply([], bufferActivePower),
+          compressorStatesData: [].concat.apply([], bufferStatesInfo)
+        };
+
+        let firstActivePowerChunk = bufferActivePower[0]
+        let startDate = firstActivePowerChunk[0].x;
+        let endDate = firstActivePowerChunk[firstActivePowerChunk.length - 1].x;
+        let totalTime = endDate - startDate;
+
+        this.loadDomain(startDate, endDate);
+        this.setTimeSpendPerState(bufferStatesInfo[0], totalTime);
+        this.loadChartsData(chartsData);
         console.log("All done!");
         console.log(bufferStatesInfo);
-        console.log(bufferAxesData);
+        console.log(bufferActivePower);
       }
     })
   }
 
+  setTimeSpendPerState = (statesInfo, totalTime) => {
+    var idleStates = _.filter(statesInfo, d => d.state === 'idle' );
+    var unloadedStates = _.filter(statesInfo, d => d.state === 'unloaded');
+    var loadedStates = _.filter(statesInfo, d => d.state === 'loaded');
+    var offStates = _.filter(statesInfo, d => d.state === 'off');
+
+    var timePerState = [{
+      x: 'off',
+      y: _.sumBy(offStates, 'time') / totalTime
+    },{
+      x: 'loaded',
+      y: _.sumBy(loadedStates, 'time') / totalTime
+    },{
+      x: 'unloaded',
+      y: _.sumBy(unloadedStates, 'time') / totalTime
+    },{
+      x: 'idle',
+      y: _.sumBy(idleStates, 'time') / totalTime
+    }];
+
+    this.setState({
+      timePerState
+    });
+  }
+
   processData = (data) => {
-    var resultData = [];
+    var compressorStatesData = [];
+    var activePowerData = [];
     var prevTime = data[0].timestamp;
-    var {states} = config;
 
     _.each(data, (record) => {
-      var result = {
+      var stateInfo = {
         from: prevTime,
         to: record.timestamp,
         time: record.timestamp - prevTime
       };
+
+      var axes = {
+        x: Number(record.timestamp), 
+        y: Number(record.recvalue)
+      };
+
       if (record.timestamp - prevTime > 30000) {
-        result.state = states.off;
+        stateInfo.state = 'off';
       } else {
-        result.state =  this.getCompressorState(record.recvalue);
+        stateInfo.state =  this.getCompressorState(record.recvalue);
       }
-      resultData = [...resultData, result];
+
+      compressorStatesData = [...compressorStatesData, stateInfo];
+      activePowerData = [...activePowerData, axes];
+
       prevTime = record.timestamp;
     });
-    return resultData;
+
+    return {compressorStatesData, activePowerData};
 }
 
   handleChangeStart = (startDate) => {
@@ -144,14 +179,19 @@ class App extends Component {
   render() {
     const startDatePicker = new Date(this.state.startDate);
     const endDatePicker =  new Date(this.state.endDate);
+
     if (this.state.loadError) {
       return <div>couldn't load file</div>;
     }
-    if (!this.state.data) {
+
+    if (this.state.loading) {
+      return <div>loading</div>;
+    }
+    if (!this.state.activePowerData) {
       return <div />;
     }
     return ( <div>
-{/* <DatePicker
+ <DatePicker
       selected={startDatePicker}
       selectsStart
       startDate={startDatePicker}
@@ -169,7 +209,7 @@ class App extends Component {
   <DatePicker
       selected={endDatePicker}
       selectsEnd
-      startDate={startDatePicker}
+      startDate={new Date(startDatePicker.setDate(startDatePicker.getDate() + 1))}
       endDate={endDatePicker}
       onChange={this.handleChangeEnd}
       minDate={startDatePicker}
@@ -180,24 +220,29 @@ class App extends Component {
       dateFormat="MMMM d, yyyy h:mm aa"
       timeCaption="time"
   /> 
-  
+
+<XYPlot xType="ordinal" width={300} height={300} xDistance={100}>
+          <VerticalGridLines />
+          <HorizontalGridLines />
+          <XAxis />
+          <YAxis />
+          <VerticalBarSeries data={this.state.timePerState} />
+</XYPlot>
+
     <FlexibleWidthXYPlot
       xType="time"
       height={700}
       xDomain={[this.state.startDate, this.state.endDate]}
-      >
-      */}
-      <FlexibleWidthXYPlot
-      xType="time"
-      height={700}
       >
       <HorizontalGridLines />
       <VerticalGridLines />
       <XAxis title="Date Axis" />
       <YAxis title="Active power Axis" />
       <LineSeries
-        data={this.state.data}/>
+        data={this.state.activePowerData}/>
   </FlexibleWidthXYPlot>
+
+  
     </div>
       
     );
