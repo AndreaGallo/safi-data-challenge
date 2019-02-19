@@ -8,6 +8,7 @@ import _ from 'lodash';
 import DatePicker from 'react-datepicker';
 import {FlexibleWidthXYPlot , XYPlot, XAxis, YAxis, HorizontalGridLines, VerticalGridLines, VerticalBarSeries,LineSeries} from 'react-vis';
 
+//TODO: PUSH OFF STATES Y CONTROLAR LAS FECHAS POR SI SON MAYOR O MENOR A LOS D LOS DATOS
 const config = {
   activePowerMaxValue: 104.92483,
   activePowerMinValue: 0.10525999999999999,
@@ -83,7 +84,7 @@ class App extends Component {
         let totalTime = endDate - startDate;
 
         this.loadDomain(startDate, endDate);
-        this.setTimeSpendPerState(bufferStatesInfo[0], totalTime);
+        this.setTimeSpendPerState(this.getTimeSpendPerState(bufferStatesInfo[0], totalTime))
         this.loadChartsData(chartsData);
         console.log("All done!");
         console.log(bufferStatesInfo);
@@ -92,13 +93,19 @@ class App extends Component {
     })
   }
 
-  setTimeSpendPerState = (statesInfo, totalTime) => {
+  setTimeSpendPerState = (timePerState) => {
+    this.setState({
+      timePerState
+    });
+  }
+
+  getTimeSpendPerState = (statesInfo, totalTime) => {
     var idleStates = _.filter(statesInfo, d => d.state === 'idle' );
     var unloadedStates = _.filter(statesInfo, d => d.state === 'unloaded');
     var loadedStates = _.filter(statesInfo, d => d.state === 'loaded');
     var offStates = _.filter(statesInfo, d => d.state === 'off');
 
-    var timePerState = [{
+    return  [{
       x: 'off',
       y: _.sumBy(offStates, 'time') / totalTime
     },{
@@ -110,11 +117,7 @@ class App extends Component {
     },{
       x: 'idle',
       y: _.sumBy(idleStates, 'time') / totalTime
-    }];
-
-    this.setState({
-      timePerState
-    });
+    }];    
   }
 
   processData = (data) => {
@@ -134,9 +137,9 @@ class App extends Component {
         y: Number(record.recvalue)
       };
 
-      if (record.timestamp - prevTime > 30000) {
+      if (stateInfo.time > 30000) {
         stateInfo.state = 'off';
-      } else {
+      } else if (stateInfo.time > 0){
         stateInfo.state =  this.getCompressorState(record.recvalue);
       }
 
@@ -150,14 +153,29 @@ class App extends Component {
 }
 
   handleChangeStart = (startDate) => {
-    this.setState({
-      startDate: new Date(startDate).getTime()
+    this.setState((prevState) => {
+      const { compressorStatesData, endDate } = prevState;
+      const slicedCompressorStatesData = _.filter(compressorStatesData, d => d.from >= startDate && d.to <= endDate);
+      const timePerState = this.getTimeSpendPerState(slicedCompressorStatesData, endDate - startDate);
+
+      return {
+        startDate: new Date(startDate).getTime(),
+        timePerState
+      }
     });
   }
 
   handleChangeEnd = (endDate) => {
-    this.setState({
-      endDate: new Date(endDate).getTime()
+    this.setState((prevState) => {
+      const { compressorStatesData, startDate } = prevState;
+      const slicedCompressorStatesData = _.filter(compressorStatesData, d => d.from >= startDate && d.to <= endDate);
+      console.log('slicedCompressorStatesData',slicedCompressorStatesData);
+      const timePerState = this.getTimeSpendPerState(slicedCompressorStatesData, endDate - startDate);
+
+      return {
+        endDate: new Date(endDate).getTime(),
+        timePerState
+      }
     });
   }
 
@@ -170,8 +188,7 @@ class App extends Component {
     const unloadedMaxValue = activePowerMinValue;
     const loadedMinValue = 0.2 * activePowerMaxValue;
 
-    if (activePower === 0) return states.off;
-    if (activePower > 0 && activePower <= unloadedMaxValue) return states.unloaded;
+    if (activePower >= 0 && activePower <= unloadedMaxValue) return states.unloaded;
     if (activePower > unloadedMaxValue && activePower < loadedMinValue) return states.idle;
     if (activePower >= loadedMinValue) return states.loaded;
   }
