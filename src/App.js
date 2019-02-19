@@ -6,9 +6,9 @@ import '../node_modules/react-vis/dist/style.css';
 import "react-datepicker/dist/react-datepicker.css";
 import _ from 'lodash';
 import DatePicker from 'react-datepicker';
+import addDays from "date-fns/addDays";
 import {FlexibleWidthXYPlot , XYPlot, XAxis, YAxis, HorizontalGridLines, VerticalGridLines, VerticalBarSeries,LineSeries} from 'react-vis';
 
-//TODO: PUSH OFF STATES Y CONTROLAR LAS FECHAS POR SI SON MAYOR O MENOR A LOS D LOS DATOS
 const config = {
   activePowerMaxValue: 104.92483,
   activePowerMinValue: 0.10525999999999999,
@@ -63,8 +63,7 @@ class App extends Component {
       chunk: partialResult => {
 
         if (partialResult.data.length) {
-          // agregar filter para q funcione en IE
-          var filterData =  partialResult.data.filter( d => d.metricid && d.metricid.toUpperCase() ===  config.metricidToFilter); 
+          var filterData =  _.filter(partialResult.data, d => d.metricid && d.metricid.toUpperCase() ===  config.metricidToFilter); 
           var dataProcessed = this.processData(filterData);
           bufferStatesInfo = [...bufferStatesInfo, dataProcessed.compressorStatesData];
           bufferActivePower = [...bufferActivePower, dataProcessed.activePowerData];
@@ -86,9 +85,6 @@ class App extends Component {
         this.loadDomain(startDate, endDate);
         this.setTimeSpendPerState(this.getTimeSpendPerState(bufferStatesInfo[0], totalTime))
         this.loadChartsData(chartsData);
-        console.log("All done!");
-        console.log(bufferStatesInfo);
-        console.log(bufferActivePower);
       }
     })
   }
@@ -107,16 +103,16 @@ class App extends Component {
 
     return  [{
       x: 'off',
-      y: _.sumBy(offStates, 'time') / totalTime
-    },{
-      x: 'loaded',
-      y: _.sumBy(loadedStates, 'time') / totalTime
+      y: (_.sumBy(offStates, 'time') * 100) / totalTime
     },{
       x: 'unloaded',
-      y: _.sumBy(unloadedStates, 'time') / totalTime
+      y: (_.sumBy(unloadedStates, 'time') * 100) / totalTime
     },{
       x: 'idle',
-      y: _.sumBy(idleStates, 'time') / totalTime
+      y: (_.sumBy(idleStates, 'time') * 100) / totalTime
+    },{
+      x: 'loaded',
+      y: (_.sumBy(loadedStates, 'time') * 100)/ totalTime
     }];    
   }
 
@@ -127,9 +123,9 @@ class App extends Component {
 
     _.each(data, (record) => {
       var stateInfo = {
-        from: prevTime,
-        to: record.timestamp,
-        time: record.timestamp - prevTime
+        from: Number(prevTime),
+        to: Number(record.timestamp),
+        time: Number(record.timestamp) - Number(prevTime)
       };
 
       var axes = {
@@ -139,7 +135,7 @@ class App extends Component {
 
       if (stateInfo.time > 30000) {
         stateInfo.state = 'off';
-      } else if (stateInfo.time > 0){
+      } else {
         stateInfo.state =  this.getCompressorState(record.recvalue);
       }
 
@@ -155,25 +151,76 @@ class App extends Component {
   handleChangeStart = (startDate) => {
     this.setState((prevState) => {
       const { compressorStatesData, endDate } = prevState;
+      startDate = new Date(startDate).getTime();
+      
+
       const slicedCompressorStatesData = _.filter(compressorStatesData, d => d.from >= startDate && d.to <= endDate);
-      const timePerState = this.getTimeSpendPerState(slicedCompressorStatesData, endDate - startDate);
+      const offStates = this.getOffStates(startDate, endDate);
+      const timePerState = this.getTimeSpendPerState([...offStates, ...slicedCompressorStatesData], endDate - startDate);
 
       return {
-        startDate: new Date(startDate).getTime(),
+        startDate,
         timePerState
       }
     });
   }
 
+  getOffStates = (startDate, endDate) => {
+    const { compressorStatesData } = this.state;
+    const fromDomain = compressorStatesData[0].from;
+    const toDomain = compressorStatesData[compressorStatesData.length - 1].to;
+    let offStateArray = [];
+
+    if (startDate < fromDomain && endDate > fromDomain) {
+      offStateArray.push({
+        from: startDate,
+        to: fromDomain,
+        time: fromDomain - startDate,
+        state: 'off'
+      });
+    }
+
+    if (startDate < fromDomain && endDate < fromDomain) {
+      offStateArray.push({
+        from: startDate,
+        to: endDate,
+        time: endDate - startDate,
+        state: 'off'
+      });
+    }
+
+    if (startDate < toDomain && endDate > toDomain) {
+      offStateArray.push({
+        from: toDomain,
+        to: endDate,
+        time: endDate - toDomain,
+        state: 'off'
+      });
+    }
+
+    if (startDate > toDomain && endDate > toDomain) {
+      offStateArray.push({
+        from: startDate,
+        to: endDate,
+        time: endDate - startDate,
+        state: 'off'
+      });
+    }
+
+    return offStateArray;
+  }
+
   handleChangeEnd = (endDate) => {
     this.setState((prevState) => {
       const { compressorStatesData, startDate } = prevState;
+      endDate = new Date(endDate).getTime();
+
       const slicedCompressorStatesData = _.filter(compressorStatesData, d => d.from >= startDate && d.to <= endDate);
-      console.log('slicedCompressorStatesData',slicedCompressorStatesData);
-      const timePerState = this.getTimeSpendPerState(slicedCompressorStatesData, endDate - startDate);
+      const offStates = this.getOffStates(startDate, endDate);
+      const timePerState = this.getTimeSpendPerState([...offStates, ...slicedCompressorStatesData], endDate - startDate);
 
       return {
-        endDate: new Date(endDate).getTime(),
+        endDate,
         timePerState
       }
     });
@@ -214,7 +261,7 @@ class App extends Component {
       startDate={startDatePicker}
       endDate={endDatePicker}
       onChange={this.handleChangeStart}
-      maxDate={endDatePicker}
+      maxDate={addDays(endDatePicker, - 1)}
       showDisabledMonthNavigation
       showTimeSelect
       timeFormat="HH:mm"
@@ -226,10 +273,10 @@ class App extends Component {
   <DatePicker
       selected={endDatePicker}
       selectsEnd
-      startDate={new Date(startDatePicker.setDate(startDatePicker.getDate() + 1))}
+      startDate={startDatePicker}
       endDate={endDatePicker}
       onChange={this.handleChangeEnd}
-      minDate={startDatePicker}
+      minDate={addDays(startDatePicker, 1)}
       showDisabledMonthNavigation
       showTimeSelect
       timeFormat="HH:mm"
