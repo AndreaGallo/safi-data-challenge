@@ -1,26 +1,13 @@
 import React, { Component } from 'react';
 import Papa from 'papaparse';
 import csvFilePath from "./data/demoCompressorWeekData.csv"
-import './App.css';
 import '../node_modules/react-vis/dist/style.css';
 import "react-datepicker/dist/react-datepicker.css";
 import _ from 'lodash';
-import DatePicker from 'react-datepicker';
-import addDays from "date-fns/addDays";
-import {FlexibleWidthXYPlot , XYPlot, XAxis, YAxis, HorizontalGridLines, VerticalGridLines, VerticalBarSeries,LineSeries} from 'react-vis';
-
-const config = {
-  activePowerMaxValue: 104.92483,
-  activePowerMinValue: 0.10525999999999999,
-  timeBetweenRecords: 3000,
-  metricidToFilter: "PSUM_KW",
-  states: {
-    off: "off",
-    loaded: "loaded",
-    unloaded: "unloaded",
-    idle: "idle"
-  }
-}
+import DateRange from './components/DateRange';
+import BarChart from './components/BarChart';
+import config from './config';
+import LineChart from './components/LineChart';
 
 class App extends Component {
   constructor(props) {
@@ -71,7 +58,6 @@ class App extends Component {
         
       },
       complete: () => {
-        //push off
         let chartsData = {
           activePowerData: [].concat.apply([], bufferActivePower),
           compressorStatesData: [].concat.apply([], bufferStatesInfo)
@@ -241,8 +227,6 @@ class App extends Component {
   }
   
   render() {
-    const startDatePicker = new Date(this.state.startDate);
-    const endDatePicker =  new Date(this.state.endDate);
 
     if (this.state.loadError) {
       return <div>couldn't load file</div>;
@@ -254,59 +238,28 @@ class App extends Component {
     if (!this.state.activePowerData) {
       return <div />;
     }
-    return ( <div>
- <DatePicker
-      selected={startDatePicker}
-      selectsStart
-      startDate={startDatePicker}
-      endDate={endDatePicker}
-      onChange={this.handleChangeStart}
-      maxDate={addDays(endDatePicker, - 1)}
-      showDisabledMonthNavigation
-      showTimeSelect
-      timeFormat="HH:mm"
-      timeIntervals={15}
-      dateFormat="MMMM d, yyyy h:mm aa"
-      timeCaption="time"
-  />
-  
-  <DatePicker
-      selected={endDatePicker}
-      selectsEnd
-      startDate={startDatePicker}
-      endDate={endDatePicker}
-      onChange={this.handleChangeEnd}
-      minDate={addDays(startDatePicker, 1)}
-      showDisabledMonthNavigation
-      showTimeSelect
-      timeFormat="HH:mm"
-      timeIntervals={15}
-      dateFormat="MMMM d, yyyy h:mm aa"
-      timeCaption="time"
-  /> 
-
-<XYPlot xType="ordinal" width={300} height={300} xDistance={100}>
-          <VerticalGridLines />
-          <HorizontalGridLines />
-          <XAxis />
-          <YAxis />
-          <VerticalBarSeries data={this.state.timePerState} />
-</XYPlot>
-
-    <FlexibleWidthXYPlot
-      xType="time"
-      height={700}
-      xDomain={[this.state.startDate, this.state.endDate]}
-      >
-      <HorizontalGridLines />
-      <VerticalGridLines />
-      <XAxis title="Date Axis" />
-      <YAxis title="Active power Axis" />
-      <LineSeries
-        data={this.state.activePowerData}/>
-  </FlexibleWidthXYPlot>
-
-  
+    
+    return ( 
+    <div className="container">
+      <DateRange 
+        startDate={this.state.startDate} 
+        endDate={this.state.endDate}
+        handleChangeStart={this.handleChangeStart}
+        handleChangeEnd={this.handleChangeEnd}
+      />
+      
+      <div class="row">
+        <div class="col-sm">
+          <BarChart data={this.state.timePerState}/>
+        </div>
+        <div class="col-sm">
+          <LineChart 
+            startDate={this.state.startDate} 
+            endDate={this.state.endDate}
+            data={this.state.activePowerData}
+          />  
+        </div>
+      </div>
     </div>
       
     );
