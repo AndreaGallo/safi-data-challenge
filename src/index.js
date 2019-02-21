@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import './index.css';
 import 'bootstrap-css-only';
+import '../node_modules/react-vis/dist/style.css';
 import App from './App';
 import * as serviceWorker from './serviceWorker';
 

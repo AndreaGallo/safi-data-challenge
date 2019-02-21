@@ -1,13 +1,12 @@
 import React, { Component } from 'react';
 import Papa from 'papaparse';
-import csvFilePath from "./data/demoCompressorWeekData.csv"
-import '../node_modules/react-vis/dist/style.css';
-import "react-datepicker/dist/react-datepicker.css";
 import _ from 'lodash';
+import csvFilePath from "./data/demoCompressorWeekData.csv"
+import config from './config';
 import DateRange from './components/DateRange';
 import BarChart from './components/BarChart';
-import config from './config';
 import LineChart from './components/LineChart';
+import Loader from './components/Loader';
 
 class App extends Component {
   constructor(props) {
@@ -26,18 +25,6 @@ class App extends Component {
     this.handleChangeEnd = this.handleChangeEnd.bind(this);
     this.getCompressorState = this.getCompressorState.bind(this);
     this.processData = this.processData.bind(this);
-  }
-
-  loadChartsData = ({activePowerData, compressorStatesData}) => {
-    this.setState({
-      activePowerData,
-      compressorStatesData,
-      loading: false
-    });
-  }
-
-  loadDomain = (startDate, endDate) => {
-    this.setState({ startDate, endDate });
   }
 
   componentWillMount() {    
@@ -75,33 +62,6 @@ class App extends Component {
     })
   }
 
-  setTimeSpendPerState = (timePerState) => {
-    this.setState({
-      timePerState
-    });
-  }
-
-  getTimeSpendPerState = (statesInfo, totalTime) => {
-    var idleStates = _.filter(statesInfo, d => d.state === 'idle' );
-    var unloadedStates = _.filter(statesInfo, d => d.state === 'unloaded');
-    var loadedStates = _.filter(statesInfo, d => d.state === 'loaded');
-    var offStates = _.filter(statesInfo, d => d.state === 'off');
-
-    return  [{
-      x: 'off',
-      y: (_.sumBy(offStates, 'time') * 100) / totalTime
-    },{
-      x: 'unloaded',
-      y: (_.sumBy(unloadedStates, 'time') * 100) / totalTime
-    },{
-      x: 'idle',
-      y: (_.sumBy(idleStates, 'time') * 100) / totalTime
-    },{
-      x: 'loaded',
-      y: (_.sumBy(loadedStates, 'time') * 100)/ totalTime
-    }];    
-  }
-
   processData = (data) => {
     var compressorStatesData = [];
     var activePowerData = [];
@@ -132,23 +92,34 @@ class App extends Component {
     });
 
     return {compressorStatesData, activePowerData};
-}
+  }
 
-  handleChangeStart = (startDate) => {
-    this.setState((prevState) => {
-      const { compressorStatesData, endDate } = prevState;
-      startDate = new Date(startDate).getTime();
-      
-
-      const slicedCompressorStatesData = _.filter(compressorStatesData, d => d.from >= startDate && d.to <= endDate);
-      const offStates = this.getOffStates(startDate, endDate);
-      const timePerState = this.getTimeSpendPerState([...offStates, ...slicedCompressorStatesData], endDate - startDate);
-
-      return {
-        startDate,
-        timePerState
-      }
+  loadChartsData = ({activePowerData, compressorStatesData}) => {
+    this.setState({
+      activePowerData,
+      compressorStatesData,
+      loading: false
     });
+  }
+
+  loadDomain = (startDate, endDate) => {
+    this.setState({ startDate, endDate });
+  }
+
+  setTimeSpendPerState = (timePerState) => {
+    this.setState({
+      timePerState
+    });
+  }
+
+  getCompressorState = (activePower) => {
+    const {activePowerMaxValue, activePowerMinValue, states} = config;
+    const unloadedMaxValue = activePowerMinValue;
+    const loadedMinValue = 0.2 * activePowerMaxValue;
+
+    if (activePower >= 0 && activePower <= unloadedMaxValue) return states.unloaded;
+    if (activePower > unloadedMaxValue && activePower < loadedMinValue) return states.idle;
+    if (activePower >= loadedMinValue) return states.loaded;
   }
 
   getOffStates = (startDate, endDate) => {
@@ -196,6 +167,36 @@ class App extends Component {
     return offStateArray;
   }
 
+  getTimeSpendPerState = (statesInfo, totalTime) => {
+    var idleStates = _.filter(statesInfo, d => d.state === 'idle' );
+    var unloadedStates = _.filter(statesInfo, d => d.state === 'unloaded');
+    var loadedStates = _.filter(statesInfo, d => d.state === 'loaded');
+    var offStates = _.filter(statesInfo, d => d.state === 'off');
+
+    var timeOff =  _.sumBy(offStates, 'time');
+    var timeUnloaded = _.sumBy(unloadedStates, 'time');
+    var timeIdle = _.sumBy(idleStates, 'time');
+    var timeLoaded = _.sumBy(loadedStates, 'time');
+
+    return  [{
+      x: 'off',
+      y: (timeOff * 100) / totalTime,
+      time: timeOff
+    },{
+      x: 'unloaded',
+      y: (timeUnloaded * 100) / totalTime,
+      time: timeUnloaded
+    },{
+      x: 'idle',
+      y: (timeIdle * 100) / totalTime,
+      time: timeIdle
+    },{
+      x: 'loaded',
+      y: (timeLoaded * 100)/ totalTime,
+      time: timeLoaded
+    }];    
+  }
+
   handleChangeEnd = (endDate) => {
     this.setState((prevState) => {
       const { compressorStatesData, startDate } = prevState;
@@ -212,19 +213,25 @@ class App extends Component {
     });
   }
 
-  /**
-   * Returns the state of the machine based on the current active power value
-   * @param activePower numeric: value from 'Psum_kw' key
-   */
-  getCompressorState = (activePower) => {
-    const {activePowerMaxValue, activePowerMinValue, states} = config;
-    const unloadedMaxValue = activePowerMinValue;
-    const loadedMinValue = 0.2 * activePowerMaxValue;
+  handleChangeStart = (startDate) => {
+    this.setState((prevState) => {
+      const { compressorStatesData, endDate } = prevState;
+      startDate = new Date(startDate).getTime();
+      
 
-    if (activePower >= 0 && activePower <= unloadedMaxValue) return states.unloaded;
-    if (activePower > unloadedMaxValue && activePower < loadedMinValue) return states.idle;
-    if (activePower >= loadedMinValue) return states.loaded;
+      const slicedCompressorStatesData = _.filter(compressorStatesData, d => d.from >= startDate && d.to <= endDate);
+      const offStates = this.getOffStates(startDate, endDate);
+      const timePerState = this.getTimeSpendPerState([...offStates, ...slicedCompressorStatesData], endDate - startDate);
+
+      return {
+        startDate,
+        timePerState
+      }
+    });
   }
+
+  
+
   
   render() {
 
@@ -233,7 +240,7 @@ class App extends Component {
     }
 
     if (this.state.loading) {
-      return <div>loading</div>;
+      return <div className="spinner"><Loader /></div>;
     }
     if (!this.state.activePowerData) {
       return <div />;
@@ -248,17 +255,17 @@ class App extends Component {
         handleChangeEnd={this.handleChangeEnd}
       />
       
-      <div class="row">
-        <div class="col-sm">
-          <BarChart data={this.state.timePerState}/>
-        </div>
-        <div class="col-sm">
-          <LineChart 
+      <LineChart 
             startDate={this.state.startDate} 
             endDate={this.state.endDate}
             data={this.state.activePowerData}
-          />  
+        /> 
+
+      <div className="row">
+        <div className="col-sm">
+          <BarChart data={this.state.timePerState}/>
         </div>
+        
       </div>
     </div>
       
