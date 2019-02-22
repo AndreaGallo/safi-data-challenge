@@ -8,7 +8,7 @@ A whole load and parse system is used to process and present the data file as an
 1. git clone https://github.com/AndreaGallo/safi-data-challenge.git
 2. cd safi-data-challenge
 3. npm install
-4. ng start
+4. npm start
 ```
 
 ## React information
