@@ -7,6 +7,7 @@ import DateRange from './components/DateRange';
 import BarChart from './components/BarChart';
 import LineChart from './components/LineChart';
 import Loader from './components/Loader';
+import Table from './components/Table';
 
 class App extends Component {
   constructor(props) {
@@ -37,26 +38,39 @@ class App extends Component {
       chunk: partialResult => {
 
         if (partialResult.data.length) {
-          var filterData =  _.filter(partialResult.data, d => d.metricid && d.metricid.toUpperCase() ===  config.metricidToFilter); 
-          var dataProcessed = this.processData(filterData);
-          bufferStatesInfo = [...bufferStatesInfo, dataProcessed.compressorStatesData];
-          bufferActivePower = [...bufferActivePower, dataProcessed.activePowerData];
+          var filterData =  _.filter(partialResult.data, d => d.metricid && d.metricid.toUpperCase() ===  config.metricId); 
+
+          if (filterData.length)
+          {
+            let dataProcessed = this.processData(filterData);
+            bufferStatesInfo = [...bufferStatesInfo, dataProcessed.compressorStatesData];
+            bufferActivePower = [...bufferActivePower, dataProcessed.activePowerData];
+          }
+          
         }
         
       },
       complete: () => {
-        let chartsData = {
-          activePowerData: [].concat.apply([], bufferActivePower),
-          compressorStatesData: [].concat.apply([], bufferStatesInfo)
+        var chartsData = {
+          activePowerData: [],
+          compressorStatesData: []
         };
 
-        let firstActivePowerChunk = bufferActivePower[0]
-        let startDate = firstActivePowerChunk[0].x;
-        let endDate = firstActivePowerChunk[firstActivePowerChunk.length - 1].x;
-        let totalTime = endDate - startDate;
+        var startDate = null, endDate = null, totalTime;
 
+        if (bufferActivePower.length && bufferStatesInfo.length)
+        {
+          chartsData.activePowerData = [].concat.apply([], bufferActivePower);
+          chartsData.compressorStatesData = [].concat.apply([], bufferStatesInfo);
+  
+          let firstActivePowerChunk = bufferActivePower[0]
+          startDate = firstActivePowerChunk[0].x;
+          endDate = firstActivePowerChunk[firstActivePowerChunk.length - 1].x;
+          totalTime = endDate - startDate;
+          this.setTimeSpendPerState(this.getTimeSpendPerState(bufferStatesInfo[0], totalTime))
+          
+        }
         this.loadDomain(startDate, endDate);
-        this.setTimeSpendPerState(this.getTimeSpendPerState(bufferStatesInfo[0], totalTime))
         this.loadChartsData(chartsData);
       }
     })
@@ -113,13 +127,13 @@ class App extends Component {
   }
 
   getCompressorState = (activePower) => {
-    const {activePowerMaxValue, activePowerMinValue, states} = config;
+    const {activePowerMaxValue, activePowerMinValue} = config;
     const unloadedMaxValue = activePowerMinValue;
     const loadedMinValue = 0.2 * activePowerMaxValue;
 
-    if (activePower >= 0 && activePower <= unloadedMaxValue) return states.unloaded;
-    if (activePower > unloadedMaxValue && activePower < loadedMinValue) return states.idle;
-    if (activePower >= loadedMinValue) return states.loaded;
+    if (activePower >= 0 && activePower <= unloadedMaxValue) return "unloaded";
+    if (activePower > unloadedMaxValue && activePower < loadedMinValue) return "idle";
+    if (activePower >= loadedMinValue) return "loaded";
   }
 
   getOffStates = (startDate, endDate) => {
@@ -179,19 +193,19 @@ class App extends Component {
     var timeLoaded = _.sumBy(loadedStates, 'time');
 
     return  [{
-      x: 'off',
+      x: 'Off',
       y: (timeOff * 100) / totalTime,
       time: timeOff
     },{
-      x: 'unloaded',
+      x: 'Unloaded',
       y: (timeUnloaded * 100) / totalTime,
       time: timeUnloaded
     },{
-      x: 'idle',
+      x: 'Idle',
       y: (timeIdle * 100) / totalTime,
       time: timeIdle
     },{
-      x: 'loaded',
+      x: 'Loaded',
       y: (timeLoaded * 100)/ totalTime,
       time: timeLoaded
     }];    
@@ -234,6 +248,10 @@ class App extends Component {
 
   
   render() {
+    const statesTable = {
+      columns: ['Name', 'Metric', 'Value'],
+      rows: config.statesInfo
+    };
 
     if (this.state.loadError) {
       return <div>couldn't load file</div>;
@@ -248,6 +266,7 @@ class App extends Component {
     
     return ( 
     <div className="container">
+      <h3 className="text-center mb-3">Metric Viewer</h3>
       <DateRange 
         startDate={this.state.startDate} 
         endDate={this.state.endDate}
@@ -261,11 +280,14 @@ class App extends Component {
             data={this.state.activePowerData}
         /> 
 
-      <div className="row">
-        <div className="col-sm">
+      <div className="row mt-3">
+        <div className="col-sm-4">
           <BarChart data={this.state.timePerState}/>
         </div>
-        
+        <div className="col-sm-6 offset-sm-2">
+          <h5 className="text-center">List of States</h5>
+          <Table data={statesTable} />
+        </div>        
       </div>
     </div>
       

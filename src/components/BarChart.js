@@ -1,5 +1,5 @@
 import React from 'react';
-import {XYPlot, XAxis, YAxis, HorizontalGridLines, VerticalGridLines, VerticalBarSeries, Hint} from 'react-vis';
+import {FlexibleWidthXYPlot, XAxis, YAxis, HorizontalGridLines, VerticalGridLines, VerticalBarSeries, Hint} from 'react-vis';
 
 class BarChart extends React.Component {
   constructor(props) {
@@ -9,35 +9,50 @@ class BarChart extends React.Component {
     };
   }
 
-  onSeriesMouseOut = (event) => {
+  onValueMouseOut = (event) => {
     this.setState({value: null})
   }
 
-  onNearestX  = (value, event) => {
-      console.log('value',value)
+  onValueMouseOver  = (value, event) => {
       this.setState({value})
   };
+
+  getTimeStr = (time) => {
+    let date = new Date(null);
+    date.setSeconds(time / 1000);
+    return date.toISOString().substr(11, 8);
+  }
 
   render() {
     const {data} = this.props;
     return (
-        <XYPlot xType="ordinal" width={300} height={300} xDistance={100}>
+      <div>
+        <FlexibleWidthXYPlot xType="ordinal" height={300} xDistance={100}>
           <VerticalGridLines />
           <HorizontalGridLines />
           <XAxis />
-          <YAxis />
-          <VerticalBarSeries 
-            onSeriesMouseOut={this.onSeriesMouseOut}
-            onNearestX={this.onNearestX} 
+          <YAxis 
+              title="Time %" 
+              style={{ title: {fontWeight: 600, fontSize: '16px'}}}
+          />
+          <VerticalBarSeries
+            opacity={0.5} 
+            onValueMouseOut={this.onValueMouseOut}
+            onValueMouseOver={this.onValueMouseOver} 
             data={data} />
           {this.state.value && 
-            <Hint value={this.state.value}>
-              <div style={{background: 'black'}}>
-                <h3>Value of hint</h3>
-                <p>{this.state.value.x}</p>
+            <Hint value={this.state.value}
+                  align={{horizontal: Hint.ALIGN.AUTO, vertical: Hint.ALIGN.TOP_EDGE}}>
+              <div className="hint-content">
+                <h5>Time</h5>
+                <p>{Number(this.state.value.y).toFixed(2) + '%'}</p>
+                <p>{this.getTimeStr(this.state.value.time)}</p>
               </div>
             </Hint>}
-        </XYPlot>
+        </FlexibleWidthXYPlot>
+        <p className="info">Mouse over bar to see time information</p>
+      </div>
+        
     )
   }
 }
