@@ -266,7 +266,7 @@ class App extends Component {
     
     return ( 
     <div className="container">
-      <h3 className="text-center mb-3">Metric Viewer</h3>
+      <h3 className="text-center mb-4">Metric Viewer</h3>
       <DateRange 
         startDate={this.state.startDate} 
         endDate={this.state.endDate}
@@ -284,7 +284,7 @@ class App extends Component {
         <div className="col-sm-4">
           <BarChart data={this.state.timePerState}/>
         </div>
-        <div className="col-sm-6 offset-sm-2">
+        <div className="col-sm-6 offset-sm-2 col-10 offset-1 mt-4 mt-sm-0">
           <h5 className="text-center">List of States</h5>
           <Table data={statesTable} />
         </div>        
